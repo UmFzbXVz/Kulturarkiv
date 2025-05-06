@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/footerLayout"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_gravity="bottom"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:fontFamily="@font/noway"
+    android:gravity="center_horizontal">
+
+    <ImageButton
+        android:id="@+id/addPlaylistButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:src="@drawable/plus"
+        android:scaleX="0.2"
+        android:scaleY="0.2"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Tilføj playliste" />
+</LinearLayout>

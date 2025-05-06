@@ -1,0 +1,67 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Indholdslayout med EditText og RecyclerView -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Header med EditText og Delete-knap -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <ImageButton
+                android:id="@+id/buttonDelete"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:src="@android:drawable/ic_menu_delete"
+                android:contentDescription="Slet Playlist"
+                android:layout_alignParentTop="true"
+                android:layout_alignParentEnd="true"
+                android:background="@android:color/transparent"
+                android:layout_marginTop="2dp"
+                android:paddingBottom="12dp" />
+
+            <EditText
+                android:id="@+id/editTextName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:hint="Playlistens navn"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:paddingBottom="12dp"
+                android:layout_marginBottom="10dp"
+                android:gravity="center"
+                android:background="@android:color/transparent"
+                android:textColorHint="#888888"
+                android:layout_centerInParent="true" />
+        </RelativeLayout>
+
+        <!-- RecyclerView -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerViewMedier"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:clipToPadding="false"
+            android:paddingBottom="16dp"
+            android:scrollbars="vertical" />
+    </LinearLayout>
+
+    <!-- FAB flyder ovenpå -->
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fab_play_all"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="40dp"
+        android:contentDescription="Afspil alle"
+        android:src="@drawable/play_arrow"
+        app:backgroundTint="@color/design_default_color_background" />
+</FrameLayout>
