@@ -225,24 +225,35 @@ class PlayerActivity : AppCompatActivity() {
                 val contextObject = jsonArray.getJSONObject(2)
 
                 val flavorAssetsArray = contextObject.optJSONArray("flavorAssets")
-                val sourcesArray = contextObject.optJSONArray("sources")
+                parsedFlavorId = flavorAssetsArray?.optJSONObject(0)?.optString("id")
+                Log.d("PlayerActivity", "parsedFlavorId: $parsedFlavorId")
 
-                parsedFlavorId = sourcesArray?.optJSONObject(0)?.optString("flavorIds")
                 parsedFileExt = flavorAssetsArray?.optJSONObject(0)?.optString("fileExt")
+                Log.d("PlayerActivity", "parsedFileExt: $parsedFileExt")
 
                 val objectsArray = jsonArray.getJSONObject(1).optJSONArray("objects")
-                if (objectsArray != null && objectsArray.length() > 0) {
-                    val mediaObject = objectsArray.getJSONObject(0)
-                    parsedEntryId = mediaObject.optString("id")
-                    parsedTitle = mediaObject.optString("name", "")
-                    parsedDescription = mediaObject.optString("description", "")
-                    parsedDate = formatDate(searchResult?.startTime.toString())
+                objectsArray?.let { array ->
+                    if (array.length() > 0) {
+                        val mediaObject = array.getJSONObject(0)
+                        parsedEntryId = mediaObject.optString("id")
+                        parsedTitle = mediaObject.optString("name", "")
+                        parsedDescription = mediaObject.optString("description", "")
+                        parsedDate = formatDate(searchResult?.startTime.toString())
+
+                        Log.d("PlayerActivity", "parsedEntryId: $parsedEntryId")
+                        Log.d("PlayerActivity", "parsedTitle: $parsedTitle")
+                        Log.d("PlayerActivity", "parsedDescription: $parsedDescription")
+                        Log.d("PlayerActivity", "parsedDate: $parsedDate")
+                    }
                 }
             }
         } catch (e: Exception) {
             Log.e("PlayerActivity", "Fejl ved parsing: ${e.message}")
         }
     }
+
+
+
     private fun updateUIFromMetadata() {
         searchResult = PlaybackState.currentSearchResult
 
@@ -284,6 +295,7 @@ class PlayerActivity : AppCompatActivity() {
         if (!parsedEntryId.isNullOrEmpty() && !parsedFlavorId.isNullOrEmpty() && !parsedFileExt.isNullOrEmpty()) {
             val mediaUrl = generateKalturaStreamLink(parsedEntryId!!, parsedFlavorId!!, parsedFileExt!!)
             generatedMediaUrl = mediaUrl
+            Log.d("", "mediaUrl i PlayerActivity der smides i startPlayer(mediaUrl): $mediaUrl")
             PlaybackState.currentEntryId = parsedEntryId
             startPlayer(mediaUrl)
         }
@@ -301,6 +313,7 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun handleApiResponse(responseData: String?) {
         runOnUiThread {
+            Log.d("", "metadata to parse:$responseData")
             parseMetadata(responseData)
             updateUIFromMetadata()
             startPlaybackIfPossible()
@@ -317,7 +330,7 @@ class PlayerActivity : AppCompatActivity() {
 
 
     private fun generateKalturaStreamLink(entryId: String, flavorId: String, fileExt: String): String {
-        return "https://vod-cache.kaltura.nordu.net/p/397/sp/39700/serveFlavor/entryId/$entryId/v/12/flavorId/$flavorId/name/a.$fileExt"
+        return "https://api.kltr.nordu.net/p/397/sp/39700/playManifest/entryId/$entryId/protocol/https/format/applehttp/flavorIds/$flavorId/a.m3u8?uiConfId=23454143&playSessionId=374da440-2887-3801-ac87-95eb3107b1ca:a5c2e371-641c-5204-e833-c1df53ed2bbf&referrer=aHR0cHM6Ly93d3cua2IuZGsvZmluZC1tYXRlcmlhbGUvZHItYXJraXZldC9wb3N0L2RzLnR2Om9haTppbzpiNTIxNmJhYi02OTdkLTRlMDEtYWM4Yy00NjM4YmVjMWY4ZmY=&clientTag=html5:v3.17.46"
     }
 
     private fun castMedia(mediaUrl: String? = null) {
