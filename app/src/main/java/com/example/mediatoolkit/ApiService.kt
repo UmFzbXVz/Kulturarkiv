@@ -43,7 +43,8 @@ object ApiService {
                     fileExt = flavorAssetsArray?.optJSONObject(0)?.optString("fileExt") ?: ""  // Opdaterer fileExt
                     Log.d("", "fileExt: $fileExt")
                 }
-                val mediaUrl = "https://vod-cache.kaltura.nordu.net/p/397/sp/39700/serveFlavor/entryId/$entryId/v/12/flavorId/$flavorId/name/a.$fileExt"
+                val mediaUrl = "https://api.kltr.nordu.net/p/397/sp/39700/playManifest/entryId/$entryId/protocol/https/format/applehttp/flavorIds/$flavorId/a.m3u8?uiConfId=23454143&playSessionId=374da440-2887-3801-ac87-95eb3107b1ca:a5c2e371-641c-5204-e833-c1df53ed2bbf&referrer=aHR0cHM6Ly93d3cua2IuZGsvZmluZC1tYXRlcmlhbGUvZHItYXJraXZldC9wb3N0L2RzLnR2Om9haTppbzpiNTIxNmJhYi02OTdkLTRlMDEtYWM4Yy00NjM4YmVjMWY4ZmY=&clientTag=html5:v3.17.46"
+                Log.d("", "mediaUrl genereret i API-modulet ($mediaUrl)")
                 return mediaUrl
 
             } catch (e: Exception) {
