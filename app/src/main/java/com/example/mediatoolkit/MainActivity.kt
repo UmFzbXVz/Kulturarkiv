@@ -1,6 +1,7 @@
 package com.example.mediatoolkit
 
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -9,6 +10,7 @@ import android.text.InputType
 import android.text.TextWatcher
 import android.util.Log
 import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -18,6 +20,10 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.GravityCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updateLayoutParams
+import androidx.core.view.updatePadding
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -26,7 +32,7 @@ import com.google.android.material.navigation.NavigationView
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-
+import androidx.constraintlayout.widget.ConstraintLayout
 
 class MainActivity : AppCompatActivity() {
 
@@ -46,33 +52,25 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playAllFab: FloatingActionButton
     private var minDurationMinutes: Int = 0
 
-
     companion object { var searchTerm: String = "*" }
-
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-
         // Cookies og cache!
         ApiService.init(applicationContext)
 
-
         // Playlister
         PlaylistManager.loadPlaylistsFromPrefs(this)
-
 
         // sortButton
         val sortButton: ImageButton = findViewById(R.id.sortButton)
         sortButton.setOnClickListener { showSortMenu(it) }
 
-
         // Side-menu
         val drawerLayout = findViewById<DrawerLayout>(R.id.drawer_layout)
         navigationView = findViewById(R.id.item_playlist)
-
 
         // "+"-knappen til playlistappendering
         val footerView = layoutInflater.inflate(R.layout.navigation_drawer_footer, navigationView, false)
@@ -89,6 +87,70 @@ class MainActivity : AppCompatActivity() {
 
         recyclerView = findViewById(R.id.recyclerView)
         recyclerView.layoutManager = LinearLayoutManager(this)
+        searchInput = findViewById(R.id.searchField)
+        playAllFab = findViewById(R.id.fab_play_all)
+
+        // Kun anvend insets-justeringer på Android 15 (API 35)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            window.setDecorFitsSystemWindows(true)
+
+            // Håndter insets for ConstraintLayout (barn af DrawerLayout)
+            val constraintLayout = drawerLayout.getChildAt(0) as ConstraintLayout
+            ViewCompat.setOnApplyWindowInsetsListener(constraintLayout) { view, insets ->
+                val systemInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                view.updatePadding(
+                    top = systemInsets.top,
+                    bottom = systemInsets.bottom,
+                    left = systemInsets.left,
+                    right = systemInsets.right
+                )
+                WindowInsetsCompat.CONSUMED
+            }
+
+            // Juster FloatingActionButton
+            ViewCompat.setOnApplyWindowInsetsListener(playAllFab) { view, insets ->
+                val systemInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                view.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                    bottomMargin = systemInsets.bottom + 40.dpToPx()
+                }
+                WindowInsetsCompat.CONSUMED
+            }
+
+            // Juster søgefelt (flyt fra bunden for at undgå navigationsbjælke)
+            ViewCompat.setOnApplyWindowInsetsListener(searchInput) { view, insets ->
+                val systemInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                view.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                    bottomMargin = systemInsets.bottom + 4.dpToPx()
+                    topMargin = 10.dpToPx()
+                    // Fjern bottom constraint for at undgå konflikt
+                    clearBottomConstraint()
+                }
+                WindowInsetsCompat.CONSUMED
+            }
+
+            // Juster menuButton (flyt fra toppen for at undgå statusbjælke)
+            ViewCompat.setOnApplyWindowInsetsListener(menuButton) { view, insets ->
+                val systemInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                view.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                    topMargin = systemInsets.top + 12.dpToPx()
+                    // Fjern bottom constraint for at undgå konflikt
+                    clearBottomConstraint()
+                }
+                WindowInsetsCompat.CONSUMED
+            }
+
+            // Juster sortButton (flyt fra toppen for at undgå statusbjælke)
+            ViewCompat.setOnApplyWindowInsetsListener(sortButton) { view, insets ->
+                val systemInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                view.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                    topMargin = systemInsets.top + 12.dpToPx()
+                    // Fjern bottom constraint for at undgå konflikt
+                    clearBottomConstraint()
+                }
+                WindowInsetsCompat.CONSUMED
+            }
+        }
+
         recyclerView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                 if (dy > 0) {
@@ -105,8 +167,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
-
-        searchInput = findViewById(R.id.searchField)
 
         // Defokusér søgefelt og luk tastaturet ved "Search"/"Done"
         searchInput.setOnEditorActionListener { _, actionId, _ ->
@@ -159,7 +219,6 @@ class MainActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         })
 
-        playAllFab = findViewById(R.id.fab_play_all)
         playAllFab.setOnClickListener {
             val currentList = adapter.getAllItems()
             val intent = Intent(this, PlayerActivity::class.java)
@@ -169,20 +228,22 @@ class MainActivity : AppCompatActivity() {
         updateNavigationDrawerPlaylists()
     }
 
+    private fun ConstraintLayout.LayoutParams.clearBottomConstraint() {
+        bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+        bottomToTop = ConstraintLayout.LayoutParams.UNSET
+    }
+
     private fun checkIfMoreDataShouldBeLoaded() {
         recyclerView.post {
             val layoutManager = recyclerView.layoutManager as LinearLayoutManager
             val lastVisible = layoutManager.findLastVisibleItemPosition()
             val total = adapter.itemCount
 
-            // Hvis sidste synlige element er det sidste i listen, og vi stadig har mere data
             if (lastVisible >= total - 1 && hasMoreData && !isLoading) {
-
                 fetchAndDisplayData(searchTerm, append = true)
             }
         }
     }
-
 
     private fun refreshSearch() {
         startIndex = 0
@@ -201,7 +262,6 @@ class MainActivity : AppCompatActivity() {
         fetchAndDisplayData(searchTerm)
     }
 
-
     private fun showSortMenu(anchor: View) {
         val dialogView = layoutInflater.inflate(R.layout.dialog_sort_menu, null)
         val radioGroup = dialogView.findViewById<RadioGroup>(R.id.sortOptions)
@@ -214,9 +274,6 @@ class MainActivity : AppCompatActivity() {
             refreshSearch()
         }
 
-
-
-        // Map radio buttons to sort options
         val sortMap = mapOf(
             R.id.sortRelevance to "score desc",
             R.id.sortNewest to "startTime desc",
@@ -225,13 +282,10 @@ class MainActivity : AppCompatActivity() {
             R.id.sortZA to "title_sort_da desc"
         )
 
-        // Sæt valgt sortering
         sortMap.entries.find { it.value == sortOption }?.let { radioGroup.check(it.key) }
 
-        // Sæt toggle-status
         switchShowPlayed.isChecked = PlaybackState.showPlayed
 
-        // Reager på ændringer
         radioGroup.setOnCheckedChangeListener { _, checkedId ->
             sortMap[checkedId]?.let {
                 sortOption = it
@@ -244,14 +298,11 @@ class MainActivity : AppCompatActivity() {
             refreshSearch()
         }
 
-        // Vis dialog
         AlertDialog.Builder(this)
             .setView(dialogView)
             .setNegativeButton("Luk", null)
             .show()
     }
-
-
 
     private fun fetchAndDisplayData(term: String, append: Boolean = false) {
         if (isLoading || !hasMoreData) return
@@ -303,22 +354,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-
-
-
     private fun normalizeSearchTerm(term: String): String {
         return term.trim().lowercase().replace(Regex("\\s+"), " ")
     }
-
 
     private fun parseJson(response: String): List<SearchResult> {
         val searchResults = mutableListOf<SearchResult>()
         val jsonObject = JSONObject(response)
         val items = jsonObject.getJSONObject("response").getJSONArray("docs")
 
-        // Sætter TotalItems i PlaybackState
         PlaybackState.currentTotalItems = jsonObject.getJSONObject("response").getInt("numFound")
-
 
         for (i in 0 until items.length()) {
             val item = items.getJSONObject(i)
@@ -343,7 +388,7 @@ class MainActivity : AppCompatActivity() {
         return searchResults
     }
 
-    fun formatNumber(numFound: Int): String {
+    private fun formatNumber(numFound: Int): String {
         return when {
             numFound >= 1_000_000 -> String.format("%.1fM", numFound / 1_000_000.0)
             numFound >= 1_000 -> String.format("%.1fk", numFound / 1_000.0)
@@ -351,12 +396,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-
     private fun showCreatePlaylistDialog() {
         val builder = AlertDialog.Builder(this)
         builder.setTitle("Ny playliste")
 
-        // Opret inputfelt
         val input = EditText(this)
         input.hint = "Navn på playliste"
         input.inputType = InputType.TYPE_CLASS_TEXT
@@ -366,9 +409,6 @@ class MainActivity : AppCompatActivity() {
             val playlistName = input.text.toString().trim()
             if (playlistName.isNotEmpty()) {
                 val newPlaylist = Playlist(name = playlistName)
-
-
-                //Log.d("MainActivity", "Oprettet playliste: ${newPlaylist.name}")
                 PlaylistManager.addPlaylist(newPlaylist)
                 PlaylistManager.savePlaylistsToPrefs(this)
                 updateNavigationDrawerPlaylists()
@@ -381,7 +421,6 @@ class MainActivity : AppCompatActivity() {
 
         builder.show()
     }
-
 
     override fun onResume() {
         super.onResume()
@@ -400,9 +439,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-
     private fun loadPlaybackState() {
-        // Hent playedIds som Set fra SharedPreferences
         val prefs = getSharedPreferences("player_prefs", MODE_PRIVATE)
         val playedIdsSet = prefs.getStringSet("played_ids", emptySet()) ?: emptySet()
 
@@ -414,7 +451,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateNavigationDrawerPlaylists() {
         val playlistContainer = findViewById<LinearLayout>(R.id.playlist_container)
-        playlistContainer.removeAllViews() // Ryd eksisterende visninger
+        playlistContainer.removeAllViews()
 
         PlaylistManager.getAllPlaylists().forEachIndexed { index, playlist ->
             val menuItemView = layoutInflater.inflate(R.layout.drawer_menu_item, playlistContainer, false)
@@ -427,7 +464,6 @@ class MainActivity : AppCompatActivity() {
                 startActivity(intent)
             }
 
-            // Tilføj 20dp margin til det første item
             val layoutParams = menuItemView.layoutParams as LinearLayout.LayoutParams
             layoutParams.topMargin = if (index == 0) 30.dpToPx() else 2.dpToPx()
             menuItemView.layoutParams = layoutParams
@@ -436,7 +472,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Extension function to convert dp to pixels
     private fun Int.dpToPx(): Int {
         val density = resources.displayMetrics.density
         return (this * density).toInt()
@@ -444,9 +479,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Fjern eventuelle runnable opgaver, hvis aktiviteten ødelægges
         searchRunnable?.let { handler.removeCallbacks(it) }
     }
-
-
 }
