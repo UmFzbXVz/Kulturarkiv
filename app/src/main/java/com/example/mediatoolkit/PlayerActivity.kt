@@ -50,6 +50,7 @@ class PlayerActivity : AppCompatActivity() {
     private val mediaItemMetadataMap = mutableMapOf<String, SearchResult>()
     private var lastPlayedUri: String? = null
     private lateinit var wakeLockManager: WakeLockManager
+    private var playSessionId: String? = null
 
 
 
@@ -114,12 +115,27 @@ class PlayerActivity : AppCompatActivity() {
         })
 
 
-
-
         // Hent playlist-elementer
         val playlistItems = intent.getParcelableArrayListExtra<SearchResult>("playlistItems") ?: ArrayList()
         val searchResult = intent.getParcelableExtra<SearchResult>("searchResult")
 
+        if (searchResult != null) {
+            if (searchResult.kalturaId == PlaybackState.currentEntryId) {
+                Log.d("PlayerActivity", "Samme video, undgår genindlæsning og playback reset")
+                updateUIFromMetadata()
+            } else {
+                Log.d("PlayerActivity", "Ny video, starter playback")
+                setSearchResult(searchResult)
+                entryId = searchResult.kalturaId
+                entryId?.let {
+                    ApiService.fetchKalturaData(it) { response ->
+                        runOnUiThread {
+                            handleApiResponse(response)
+                        }
+                    }
+                }
+            }
+        }
 
         if (searchResult == null) {
             // Håndter playliste
@@ -136,30 +152,29 @@ class PlayerActivity : AppCompatActivity() {
                                 mediaUrl?.let { url ->
                                     val mediaItem = MediaItem.fromUri(url)
                                     mediaItems[index] = mediaItem
-                                    mediaItemMetadataMap[url.toString()] =
-                                        item // map URL til metadata
+                                    mediaItemMetadataMap[url.toString()] = item
                                 }
-                            }
-                            itemsProcessed++
-                            if (itemsProcessed == totalItems) {
-                                val finalList = mediaItems.filterNotNull()
-                                player.clearMediaItems()
-                                player.setMediaItems(finalList)
-                                player.shuffleModeEnabled = false
-                                player.prepare()
-                                player.playWhenReady = false
 
-                                // Byg castPlaylist baseret på mediaItems og metadata
-                                castPlaylist = mediaItems.mapIndexedNotNull { idx, mediaItem ->
-                                    val url = mediaItem?.localConfiguration?.uri?.toString()
-                                    val title = playlistItems.getOrNull(idx)?.title
-                                    val startTime = playlistItems.getOrNull(idx)?.startTime
-                                    //Log.d("", "startTime for $mediaItem: $startTime")
-                                    if (url != null && title != null) Pair(url, title) else null
+                                itemsProcessed++
+
+                                if (itemsProcessed == totalItems) {
+                                    val finalList = mediaItems.filterNotNull()
+                                    player.clearMediaItems()
+                                    player.setMediaItems(finalList)
+                                    player.shuffleModeEnabled = false
+                                    player.prepare()
+                                    player.playWhenReady = false
+
+                                    castPlaylist = mediaItems.mapIndexedNotNull { idx, mediaItem ->
+                                        val url = mediaItem?.localConfiguration?.uri?.toString()
+                                        val title = playlistItems.getOrNull(idx)?.title
+                                        if (url != null && title != null) Pair(url, title) else null
+                                    }
                                 }
                             }
                         }
                     }
+
                 } ?: run {
                     itemsProcessed++
                 }
@@ -167,26 +182,8 @@ class PlayerActivity : AppCompatActivity() {
         }
         else {
             // Fortsæt med eksisterende afspilningslogik til håndtering af searchResult
-            //Log.d("PlayerActivity", "Playing single search result: ${searchResult.title}")
-
-            // SET SEARCHRESULT TIL PLAYERMANAGER
+            Log.d("PlayerActivity", "Playing single search result: ${searchResult.title}")
             setSearchResult(searchResult)
-
-            if (searchResult.kalturaId != PlaybackState.currentSearchResult?.kalturaId) {
-            // Hent mediaUrl via API
-            ApiService.getMediaUrlviaAPI(searchResult.kalturaId!!) { mediaUrl ->
-                runOnUiThread {
-                    mediaUrl?.let { url ->
-                        //player.clearMediaItems()
-                        player.clearMediaItems()
-                        player.setMediaItem(MediaItem.fromUri(url))
-                        player.prepare()
-                        player.playWhenReady = false
-
-                    }
-                }
-            }
-            }
         }
 
 
@@ -211,13 +208,14 @@ class PlayerActivity : AppCompatActivity() {
         if (entryId != null) {
             ApiService.fetchKalturaData(entryId!!) { response ->
                 runOnUiThread {
-                    handleApiResponse(response)
+                    //handleApiResponse(response)
                     // Log.d("", "genEntryFlavorExt-test: " + getEntryFlavorExt(response.toString()))
                     // -> genEntryFlavorExt-test: https://vod-cache.kaltura.nordu.net/p/397/sp/39700/serveFlavor/entryId/0_rhjmlvff/v/12/flavorId/0_hvophoob/name/a.mp4
                 }
             }
         }
     }
+
 
     private fun parseMetadata(responseData: String?) {
         try {
@@ -226,35 +224,24 @@ class PlayerActivity : AppCompatActivity() {
                 val contextObject = jsonArray.getJSONObject(2)
 
                 val flavorAssetsArray = contextObject.optJSONArray("flavorAssets")
-                parsedFlavorId = flavorAssetsArray?.optJSONObject(0)?.optString("id")
-                Log.d("PlayerActivity", "parsedFlavorId: $parsedFlavorId")
+                val sourcesArray = contextObject.optJSONArray("sources")
 
+                parsedFlavorId = sourcesArray?.optJSONObject(0)?.optString("flavorIds")
                 parsedFileExt = flavorAssetsArray?.optJSONObject(0)?.optString("fileExt")
-                Log.d("PlayerActivity", "parsedFileExt: $parsedFileExt")
 
                 val objectsArray = jsonArray.getJSONObject(1).optJSONArray("objects")
-                objectsArray?.let { array ->
-                    if (array.length() > 0) {
-                        val mediaObject = array.getJSONObject(0)
-                        parsedEntryId = mediaObject.optString("id")
-                        parsedTitle = mediaObject.optString("name", "")
-                        parsedDescription = mediaObject.optString("description", "")
-                        parsedDate = formatDate(searchResult?.startTime.toString())
-
-                        Log.d("PlayerActivity", "parsedEntryId: $parsedEntryId")
-                        Log.d("PlayerActivity", "parsedTitle: $parsedTitle")
-                        Log.d("PlayerActivity", "parsedDescription: $parsedDescription")
-                        Log.d("PlayerActivity", "parsedDate: $parsedDate")
-                    }
+                if (objectsArray != null && objectsArray.length() > 0) {
+                    val mediaObject = objectsArray.getJSONObject(0)
+                    parsedEntryId = mediaObject.optString("id")
+                    parsedTitle = mediaObject.optString("name", "")
+                    parsedDescription = mediaObject.optString("description", "")
+                    parsedDate = formatDate(searchResult?.startTime.toString())
                 }
             }
         } catch (e: Exception) {
             Log.e("PlayerActivity", "Fejl ved parsing: ${e.message}")
         }
     }
-
-
-
     private fun updateUIFromMetadata() {
         searchResult = PlaybackState.currentSearchResult
 
@@ -296,8 +283,14 @@ class PlayerActivity : AppCompatActivity() {
         if (!parsedEntryId.isNullOrEmpty() && !parsedFlavorId.isNullOrEmpty() && !parsedFileExt.isNullOrEmpty()) {
             val mediaUrl = generateKalturaStreamLink(parsedEntryId!!, parsedFlavorId!!, parsedFileExt!!)
             generatedMediaUrl = mediaUrl
-            Log.d("", "mediaUrl i PlayerActivity der smides i startPlayer(mediaUrl): $mediaUrl")
             PlaybackState.currentEntryId = parsedEntryId
+
+            // Tjek om mediet allerede er indlæst
+            val currentMediaUri = player.currentMediaItem?.localConfiguration?.uri?.toString()
+            if (currentMediaUri == mediaUrl) {
+                Log.d("PlayerActivity", "Mediet er allerede indlæst, springer afspilning over")
+                return
+            }
             startPlayer(mediaUrl)
         }
     }
@@ -314,7 +307,6 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun handleApiResponse(responseData: String?) {
         runOnUiThread {
-            Log.d("", "metadata to parse:$responseData")
             parseMetadata(responseData)
             updateUIFromMetadata()
             startPlaybackIfPossible()
@@ -328,6 +320,14 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
+    private fun getOrCreatePlaySessionId(): String {
+        if (playSessionId == null) {
+            playSessionId = generatePlaySessionId()
+        }
+        return playSessionId!!
+    }
+
+
     private fun generatePlaySessionId(): String {
         val uuid1 = UUID.randomUUID().toString()
         val uuid2 = UUID.randomUUID().toString()
@@ -335,13 +335,28 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun generateKalturaStreamLink(entryId: String, flavorId: String, fileExt: String): String {
-        val playSessionId = generatePlaySessionId()
-        //Log.d("PlayerActivity", "Genererer kaltura-streamlink baseret på $entryId og $flavorId med playSessionId: $playSessionId")
-        return "https://api.kltr.nordu.net/p/397/sp/39700/playManifest/entryId/$entryId/protocol/https/format/applehttp/flavorIds/$flavorId/a.m3u8?uiConfId=23454143&playSessionId=$playSessionId&referrer=aHR0cHM6Ly93d3cua2IuZGsvZmluZC1tYXRlcmlhbGUvZHItYXJraXZldC9wb3N0L2RzLnR2Om9haTppbzpiNTIxNmJhYi02OTdkLTRlMDEtYWM4Yy00NjM4YmVjMWY4ZmY=&clientTag=html5:v3.17.46"
+        val currentPlaySessionId = getOrCreatePlaySessionId()
+        //Log.d("PlayerActivity", "Genererer kaltura-streamlink baseret på $entryId og $flavorId med playSessionId: $currentPlaySessionId")
+
+        val baseUrl = "https://api.kltr.nordu.net/p/397/sp/39700/playManifest/entryId/$entryId/protocol/https"
+        val queryParams = "?uiConfId=23454143&playSessionId=$currentPlaySessionId&referrer=aHR0cHM6Ly93d3cua2IuZGsvZmluZC1tYXRlcmlhbGUvZHItYXJraXZldC9wb3N0L2RzLnR2Om9haTppbzpiNTIxNmJhYi02OTdkLTRlMDEtYWM4Yy00NjM4YmVjMWY4ZmY=&clientTag=html5:v3.17.46"
+
+        return when (fileExt) {
+            "mp3" -> "$baseUrl/format/url/flavorIds/$flavorId/a.mp3$queryParams"
+            else -> "$baseUrl/format/applehttp/flavorIds/$flavorId/a.m3u8$queryParams"
+        }
     }
 
 
+    private fun generateChromecastMediaUrl(entryId: String, flavorId: String, fileExt: String): String {
+        return when (fileExt.lowercase()) {
+            "mp3" -> "https://vod-cache.kaltura.nordu.net/p/397/sp/39700/serveFlavor/entryId/$entryId/v/12/flavorId/$flavorId/name/a.mp3"
+            else -> "https://vod-cache.kaltura.nordu.net/hls/p/397/sp/39700/serveFlavor/entryId/$entryId/v/12/ev/1/flavorId/$flavorId/name/a.mp4/index.m3u8"
+        }
+    }
+
     private fun castMedia(mediaUrl: String? = null) {
+        Log.d("PlayerActivity", "castMedia kaldet med mediaUrl: $mediaUrl")
         val castSession = castContext.sessionManager.currentCastSession
         val remoteMediaClient = castSession?.takeIf { it.isConnected }?.remoteMediaClient
 
@@ -353,15 +368,21 @@ class PlayerActivity : AppCompatActivity() {
         if (castPlaylist.isNotEmpty()) {
             val mediaQueueItems = castPlaylist.mapNotNull { (url, _) ->
                 val item = mediaItemMetadataMap[url] ?: return@mapNotNull null
+                val chromecastUrl = generateChromecastMediaUrl(
+                    item.kalturaId ?: return@mapNotNull null,
+                    parsedFlavorId ?: return@mapNotNull null,
+                    parsedFileExt ?: return@mapNotNull null
+                )
+                Log.d("PlayerActivity", "Chromecast URL for playlist item: $chromecastUrl")
 
                 val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply {
                     putString(MediaMetadata.KEY_TITLE, item.title.toString())
                     putString(MediaMetadata.KEY_SUBTITLE, formatDate(item.startTime.toString()))
                 }
 
-                val contentType = getContentType(url)
+                val contentType = getContentType(chromecastUrl)
 
-                val mediaInfo = MediaInfo.Builder(url)
+                val mediaInfo = MediaInfo.Builder(chromecastUrl)
                     .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
                     .setContentType(contentType)
                     .setMetadata(metadata)
@@ -387,17 +408,19 @@ class PlayerActivity : AppCompatActivity() {
                 Toast.makeText(this, "Kunne ikke oprette cast-kø", Toast.LENGTH_SHORT).show()
             }
 
-        } else if (mediaUrl != null) {
+        } else if (parsedEntryId != null && parsedFlavorId != null && parsedFileExt != null) {
             val item = getSearchResultFromIntent()
+            val chromecastUrl = generateChromecastMediaUrl(parsedEntryId!!, parsedFlavorId!!, parsedFileExt!!)
+            Log.d("PlayerActivity", "Chromecast URL for single item: $chromecastUrl")
 
             val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply {
                 putString(MediaMetadata.KEY_TITLE, item?.title.toString())
                 putString(MediaMetadata.KEY_SUBTITLE, formatDate(item?.startTime.toString()))
             }
 
-            val contentType = getContentType(mediaUrl)
+            val contentType = getContentType(chromecastUrl)
 
-            val mediaInfo = MediaInfo.Builder(mediaUrl)
+            val mediaInfo = MediaInfo.Builder(chromecastUrl)
                 .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
                 .setContentType(contentType)
                 .setMetadata(metadata)
@@ -410,7 +433,7 @@ class PlayerActivity : AppCompatActivity() {
 
             remoteMediaClient.load(loadRequestData)
         } else {
-            Toast.makeText(this, "Ingen media URL at caste", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Ingen media URL eller metadata tilgængelig for casting", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -495,33 +518,6 @@ class PlayerActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
     }
-
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        setIntent(intent) // Opdater intent'et for aktiviteten
-        Log.d("PlayerActivity", "onNewIntent triggered")
-
-        // Hent og håndter nye data fra intent
-        val newSearchResult = intent?.getParcelableExtra<SearchResult>("searchResult")
-        if (newSearchResult != null) {
-            Log.d("PlayerActivity", "Received new SearchResult via onNewIntent: ${newSearchResult.title}")
-            setSearchResult(newSearchResult)
-            updateUIFromMetadata()
-
-            // Hent ny mediaUrl og start afspilning
-            ApiService.getMediaUrlviaAPI(newSearchResult.kalturaId!!) { mediaUrl ->
-                runOnUiThread {
-                    mediaUrl?.let { url ->
-                        player.clearMediaItems()
-                        player.setMediaItem(MediaItem.fromUri(url))
-                        player.prepare()
-                        player.playWhenReady = false
-                    }
-                }
-            }
-        }
-    }
-
 
 
     private fun setPlayerViewFullscreen(isFullscreen: Boolean) {
