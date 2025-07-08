@@ -75,11 +75,9 @@ class PlayerActivity : AppCompatActivity() {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 super.onMediaItemTransition(mediaItem, reason)
 
-                // Det nye mediaItem (den vi skifter *til*)
                 val currentUri = mediaItem?.localConfiguration?.uri?.toString() ?: return
 
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
-                    // Bruger har manuelt klikket "næste" forlæns/baglæns
                     mediaItemMetadataMap[currentUri]?.let {
                         setSearchResult(it)
                         updateUIFromMetadata()
@@ -208,7 +206,7 @@ class PlayerActivity : AppCompatActivity() {
         if (entryId != null) {
             ApiService.fetchKalturaData(entryId!!) { response ->
                 runOnUiThread {
-                    //handleApiResponse(response)
+                    handleApiResponse(response)
                     // Log.d("", "genEntryFlavorExt-test: " + getEntryFlavorExt(response.toString()))
                     // -> genEntryFlavorExt-test: https://vod-cache.kaltura.nordu.net/p/397/sp/39700/serveFlavor/entryId/0_rhjmlvff/v/12/flavorId/0_hvophoob/name/a.mp4
                 }
@@ -347,13 +345,14 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-
-    private fun generateChromecastMediaUrl(entryId: String, flavorId: String, fileExt: String): String {
+    private fun generateChromecastLink(entryId: String, flavorId: String, fileExt: String): String {
         return when (fileExt.lowercase()) {
-            "mp3" -> "https://vod-cache.kaltura.nordu.net/p/397/sp/39700/serveFlavor/entryId/$entryId/v/12/flavorId/$flavorId/name/a.mp3"
-            else -> "https://vod-cache.kaltura.nordu.net/hls/p/397/sp/39700/serveFlavor/entryId/$entryId/v/12/ev/1/flavorId/$flavorId/name/a.mp4/index.m3u8"
+            "mp3" -> "https://api.kltr.nordu.net/p/397/sp/39700/serveFlavor/entryId/$entryId/flavorId/$flavorId/name/a.mp3"
+            else -> "https://api.kltr.nordu.net/p/397/sp/39700/serveFlavor/entryId/$entryId/flavorId/$flavorId/name/a.mp4"
         }
     }
+
+
 
     private fun castMedia(mediaUrl: String? = null) {
         Log.d("PlayerActivity", "castMedia kaldet med mediaUrl: $mediaUrl")
@@ -366,51 +365,65 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         if (castPlaylist.isNotEmpty()) {
-            val mediaQueueItems = castPlaylist.mapNotNull { (url, _) ->
-                val item = mediaItemMetadataMap[url] ?: return@mapNotNull null
-                val chromecastUrl = generateChromecastMediaUrl(
-                    item.kalturaId ?: return@mapNotNull null,
-                    parsedFlavorId ?: return@mapNotNull null,
-                    parsedFileExt ?: return@mapNotNull null
-                )
-                Log.d("PlayerActivity", "Chromecast URL for playlist item: $chromecastUrl")
+            val mediaQueueItems = mutableListOf<MediaQueueItem>()
 
-                val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply {
-                    putString(MediaMetadata.KEY_TITLE, item.title.toString())
-                    putString(MediaMetadata.KEY_SUBTITLE, formatDate(item.startTime.toString()))
+            fun processNext(index: Int) {
+                if (index >= castPlaylist.size) {
+                    if (mediaQueueItems.isNotEmpty()) {
+                        val queueData = MediaQueueData.Builder()
+                            .setItems(mediaQueueItems)
+                            .setStartIndex(0)
+                            .setRepeatMode(MediaStatus.REPEAT_MODE_REPEAT_OFF)
+                            .build()
+
+                        val loadRequestData = MediaLoadRequestData.Builder()
+                            .setQueueData(queueData)
+                            .setAutoplay(true)
+                            .build()
+
+                        remoteMediaClient.load(loadRequestData)
+                    } else {
+                        Toast.makeText(this, "Kunne ikke oprette cast-kø", Toast.LENGTH_SHORT).show()
+                    }
+                    return
                 }
 
-                val contentType = getContentType(chromecastUrl)
+                val (url, _) = castPlaylist[index]
+                val item = mediaItemMetadataMap[url]
+                if (item == null || item.kalturaId == null) {
+                    processNext(index + 1)
+                    return
+                }
 
-                val mediaInfo = MediaInfo.Builder(chromecastUrl)
-                    .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
-                    .setContentType(contentType)
-                    .setMetadata(metadata)
-                    .build()
+                ApiService.getMediaUrlviaAPI(item.kalturaId) { uri ->
+                    if (uri != null) {
+                        val chromecastUrl = uri.toString()
+                        Log.d("PlayerActivity", "Chromecast URL for playlist item: $chromecastUrl")
 
-                MediaQueueItem.Builder(mediaInfo).build()
+                        val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply {
+                            putString(MediaMetadata.KEY_TITLE, item.title.toString())
+                            putString(MediaMetadata.KEY_SUBTITLE, formatDate(item.startTime.toString()))
+                        }
+
+                        val contentType = getContentType(chromecastUrl)
+
+                        val mediaInfo = MediaInfo.Builder(chromecastUrl)
+                            .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
+                            .setContentType(contentType)
+                            .setMetadata(metadata)
+                            .build()
+
+                        mediaQueueItems.add(MediaQueueItem.Builder(mediaInfo).build())
+                    }
+                    processNext(index + 1)
+                }
             }
 
-            if (mediaQueueItems.isNotEmpty()) {
-                val queueData = MediaQueueData.Builder()
-                    .setItems(mediaQueueItems.toMutableList())
-                    .setStartIndex(0)
-                    .setRepeatMode(MediaStatus.REPEAT_MODE_REPEAT_OFF)
-                    .build()
-
-                val loadRequestData = MediaLoadRequestData.Builder()
-                    .setQueueData(queueData)
-                    .setAutoplay(true)
-                    .build()
-
-                remoteMediaClient.load(loadRequestData)
-            } else {
-                Toast.makeText(this, "Kunne ikke oprette cast-kø", Toast.LENGTH_SHORT).show()
-            }
-
-        } else if (parsedEntryId != null && parsedFlavorId != null && parsedFileExt != null) {
-            val item = getSearchResultFromIntent()
-            val chromecastUrl = generateChromecastMediaUrl(parsedEntryId!!, parsedFlavorId!!, parsedFileExt!!)
+            processNext(0)
+        }
+        else if (parsedEntryId != null && parsedFlavorId != null && parsedFileExt != null) {
+            val item = PlaybackState.currentSearchResult
+            val chromecastUrl = generateChromecastLink(parsedEntryId!!, parsedFlavorId!!, parsedFileExt!!)
             Log.d("PlayerActivity", "Chromecast URL for single item: $chromecastUrl")
 
             val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply {
@@ -455,7 +468,6 @@ class PlayerActivity : AppCompatActivity() {
             else -> "video/mp4"
         }
     }
-
 
 
     private val sessionListener = object : SessionManagerListener<CastSession> {
