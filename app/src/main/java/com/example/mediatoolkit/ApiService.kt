@@ -20,94 +20,131 @@ object ApiService {
     private val client = OkHttpClient()
     private var authCookie: String? = null
     private var hasRetriedAfter401 = false
-    private val mediaCache = mutableMapOf<String, Uri?>() // Cache til medie-URL'er
+    private val mediaCache = mutableMapOf<String, Uri?>() 
     private lateinit var prefs: android.content.SharedPreferences
 
+    fun init(context: android.content.Context) {
+        prefs = context.getSharedPreferences("api_service_prefs", android.content.Context.MODE_PRIVATE)
+        authCookie = prefs.getString("auth_cookie", null)
 
-    private fun generateChromecastLink(entryId: String, flavorId: String, fileExt: String): String {
+        // Indlæs mediaCache fra prefs
+        val cacheJson = prefs.getString("media_cache", null)
+        cacheJson?.let {
+            try {
+                val jsonObject = JSONObject(it)
+                for (key in jsonObject.keys()) {
+                    val uriStr = jsonObject.optString(key, null)
+                    mediaCache[key] = uriStr?.toUri()
+                }
+            } catch (e: Exception) {
+                Log.e("ApiService", "Kunne ikke indlæse mediaCache: ${e.message}")
+            }
+        }
+    }
+
+    // Ny: Parser kun de nødvendige komponenter til URL-generering (entryId, flavorId, fileExt)
+    fun parseUrlComponents(responseData: String?): Triple<String?, String?, String?>? {
+        return try {
+            responseData?.let {
+                val jsonArray = JSONArray(it)
+                val contextObject = jsonArray.getJSONObject(2)
+
+                val flavorAssetsArray = contextObject.optJSONArray("flavorAssets")
+                val sourcesArray = contextObject.optJSONArray("sources")
+
+                val flavorId = sourcesArray?.optJSONObject(0)?.optString("flavorIds")
+                val fileExt = flavorAssetsArray?.optJSONObject(0)?.optString("fileExt")
+
+                val objectsArray = jsonArray.getJSONObject(1).optJSONArray("objects")
+                if (objectsArray != null && objectsArray.length() > 0) {
+                    val mediaObject = objectsArray.getJSONObject(0)
+                    val entryId = mediaObject.optString("id")
+                    return Triple(entryId, flavorId, fileExt)
+                }
+            }
+            null
+        } catch (e: Exception) {
+            Log.e("ApiService", "Fejl ved parsing: ${e.message}")
+            null
+        }
+    }
+
+    // Flyttet fra PlayerActivity: Generer URL til lokal afspilning (ExoPlayer)
+    fun generateLocalStreamUrl(entryId: String, flavorId: String, fileExt: String, playSessionId: String): String {
+        Log.d("ApiService", "Genererer local stream URL baseret på $entryId og $flavorId med playSessionId: $playSessionId")
+
+        val baseUrl = "https://api.kltr.nordu.net/p/397/sp/39700/playManifest/entryId/$entryId/protocol/https"
+        val queryParams = "?uiConfId=23454143&playSessionId=$playSessionId&referrer=aHR0cHM6Ly93d3cua2IuZGsvZmluZC1tYXRlcmlhbGUvZHItYXJraXZldC9wb3N0L2RzLnR2Om9haTppbzpiNTIxNmJhYi02OTdkLTRlMDEtYWM4Yy00NjM4YmVjMWY4ZmY=&clientTag=html5:v3.17.46"
+
+        return when (fileExt) {
+            "mp3" -> "$baseUrl/format/url/flavorIds/$flavorId/a.mp3$queryParams"
+            else -> "$baseUrl/format/applehttp/flavorIds/$flavorId/a.m3u8$queryParams"
+        }
+    }
+
+    // Flyttet fra PlayerActivity og gjort public
+    fun generateCastUrl(entryId: String, flavorId: String, fileExt: String): String {
         return when (fileExt.lowercase()) {
             "mp3" -> "https://api.kltr.nordu.net/p/397/sp/39700/serveFlavor/entryId/$entryId/flavorId/$flavorId/name/a.mp3"
             else -> "https://api.kltr.nordu.net/p/397/sp/39700/serveFlavor/entryId/$entryId/flavorId/$flavorId/name/a.mp4"
         }
     }
 
-    // Function to handle the response and extract required values
-    fun getEntryFlavorExt(responseData: String): String {
-        Log.d("", "responseData:$responseData")
-        responseData.let {
-            try {
-                var entryId = ""
-                var fileExt = ""
-                val contextObject = JSONArray(it).getJSONObject(2)
-                val flavorAssetsArray = contextObject.optJSONArray("flavorAssets")
-                val flavorId = contextObject.optJSONArray("sources")?.optJSONObject(0)?.optString("flavorIds")
-                Log.d("", "flavorId: $flavorId")
-                val mediaObject =
-                    JSONArray(it).getJSONObject(1).optJSONArray("objects")?.optJSONObject(0)
+    // Opdateret: Understøtter nu forCast og playSessionId
+    fun getMediaUrlviaAPI(entryId: String, forCast: Boolean = false, playSessionId: String? = null, onResult: (Uri?) -> Unit) {
+        val cacheKey = "$entryId${if (forCast) "_cast" else "_local"}"
 
-                mediaObject?.let { media ->
-                    entryId = media.optString("id")  // Opdaterer entryId
-                    Log.d("", "entryId: $entryId")
-                    fileExt = flavorAssetsArray?.optJSONObject(0)?.optString("fileExt") ?: ""  // Opdaterer fileExt
-                    Log.d("", "fileExt: $fileExt")
-                }
-                //val mediaUrl = "https://api.kltr.nordu.net/p/397/sp/39700/playManifest/entryId/$entryId/protocol/https/format/applehttp/flavorIds/$flavorId/a.m3u8?uiConfId=23454143&playSessionId=374da440-2887-3801-ac87-95eb3107b1ca:a5c2e371-641c-5204-e833-c1df53ed2bbf&referrer=aHR0cHM6Ly93d3cua2IuZGsvZmluZC1tYXRlcmlhbGUvZHItYXJraXZldC9wb3N0L2RzLnR2Om9haTppbzpiNTIxNmJhYi02OTdkLTRlMDEtYWM4Yy00NjM4YmVjMWY4ZmY=&clientTag=html5:v3.17.46"
-                val mediaUrl = generateChromecastLink(entryId, flavorId.toString(), fileExt)
-
-                Log.d("", "mediaUrl genereret i API-modulet ($mediaUrl)")
-                return mediaUrl
-
-            } catch (e: Exception) {
-                Log.d("", "Ting gik galt her")
-            }
-        }
-        return ""
-    }
-
-    fun getMediaUrlviaAPI(entryId: String, onResult: (Uri?) -> Unit) {
-        // Tjek om URL allerede er i cachen
-        mediaCache[entryId]?.let { cachedUrl ->
-            Log.d("KalturaData", "Henter fra cache for entryId: $entryId, URL: $cachedUrl")
-
-            // Returner cached URL og sørg for at callback'en kører på hovedtråden
+        // Tjek cache
+        mediaCache[cacheKey]?.let { cachedUrl ->
+            Log.d("KalturaData", "Henter fra cache for $cacheKey: $cachedUrl")
             runOnMainThread { onResult(cachedUrl) }
             return
         }
 
-        Log.d("KalturaData", "Henter fra API (ikke cache) for entryId: $entryId")
+        Log.d("KalturaData", "Henter fra API for $cacheKey")
         fetchKalturaData(entryId) { responseData ->
             responseData?.let {
-                val mediaUrl = getEntryFlavorExt(it)
-                Log.d("KalturaData", "Hentet fra API: $mediaUrl") // Logger mediaUrl
-                mediaCache[entryId] = mediaUrl.toUri() // Gem i cache
+                val components = parseUrlComponents(it)
+                if (components != null) {
+                    val (_, flavorId, fileExt) = components
+                    if (flavorId != null && fileExt != null) {
+                        val mediaUrl = if (forCast) {
+                            generateCastUrl(entryId, flavorId, fileExt)
+                        } else {
+                            if (playSessionId == null) {
+                                Log.e("ApiService", "playSessionId kræves for local URL")
+                                runOnMainThread { onResult(null) }
+                                return@let
+                            }
+                            generateLocalStreamUrl(entryId, flavorId, fileExt, playSessionId)
+                        }
+                        Log.d("KalturaData", "Genereret URL: $mediaUrl")
+                        val uri = mediaUrl.toUri()
+                        mediaCache[cacheKey] = uri // Cache
 
-                // Gem cache til prefs som JSON
-                val jsonObject = JSONObject()
-                mediaCache.forEach { (key, uri) ->
-                    jsonObject.put(key, uri.toString())
+                        // Gem cache til prefs
+                        val jsonObject = JSONObject()
+                        mediaCache.forEach { (key, u) -> jsonObject.put(key, u.toString()) }
+                        prefs.edit { putString("media_cache", jsonObject.toString()) }
+
+                        runOnMainThread { onResult(uri) }
+                    } else {
+                        runOnMainThread { onResult(null) }
+                    }
+                } else {
+                    runOnMainThread { onResult(null) }
                 }
-                prefs.edit() { putString("media_cache", jsonObject.toString()) }
-
-                // Returner resultat på hovedtråden
-                runOnMainThread { onResult(mediaUrl.toUri()) }
-            } ?: run {
-                Log.d("KalturaData", "Ingen data modtaget for entryId: $entryId")
-
-                // Returner null resultat på hovedtråden
-                runOnMainThread { onResult(null) }
-            }
+            } ?: runOnMainThread { onResult(null) }
         }
     }
+
     private fun runOnMainThread(action: () -> Unit) {
         if (Thread.currentThread() == Looper.getMainLooper().thread) {
-            // Hvis vi allerede er på hovedtråden, kan vi bare køre koden med det samme
             action()
         } else {
-            // Ellers skub koden til hovedtråden
             Handler(Looper.getMainLooper()).post(action)
         }
     }
-
 
     fun fetchData(url: String, callback: (String?) -> Unit) {
         val requestBuilder = Request.Builder().url(url)
@@ -241,25 +278,6 @@ object ApiService {
                 onComplete()
             }
         })
-    }
-
-    fun init(context: android.content.Context) {
-        prefs = context.getSharedPreferences("api_service_prefs", android.content.Context.MODE_PRIVATE)
-        authCookie = prefs.getString("auth_cookie", null)
-
-        // Indlæs mediaCache fra prefs
-        val cacheJson = prefs.getString("media_cache", null)
-        cacheJson?.let {
-            try {
-                val jsonObject = JSONObject(it)
-                for (key in jsonObject.keys()) {
-                    val uriStr = jsonObject.optString(key, null)
-                    mediaCache[key] = uriStr?.toUri()
-                }
-            } catch (e: Exception) {
-                Log.e("ApiService", "Kunne ikke indlæse mediaCache: ${e.message}")
-            }
-        }
     }
 
 
