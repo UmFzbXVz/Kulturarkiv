@@ -22,11 +22,16 @@ import android.content.res.Configuration
 import android.view.ViewGroup
 import android.view.WindowInsets
 import android.view.WindowInsetsController
+import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
+import java.util.UUID
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updateLayoutParams
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.view.WindowCompat
 import com.google.android.gms.cast.MediaQueueData
 import com.google.android.gms.cast.MediaQueueItem
 import com.google.android.gms.cast.MediaStatus
-import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
-import java.util.UUID
 
 class PlayerActivity : AppCompatActivity() {
 
@@ -50,14 +55,25 @@ class PlayerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_player)
 
-        // Strøm
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
         wakeLockManager = WakeLockManager(this)
 
-        // Initialiser playerView
         playerView = findViewById(R.id.playerView)
         playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
         player = PlayerManager.getPlayer(this)
         playerView.player = player
+
+        val metadataStartTime = findViewById<TextView>(R.id.metadataStartTime)
+
+        ViewCompat.setOnApplyWindowInsetsListener(metadataStartTime) { view, insets ->
+            val systemInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updateLayoutParams<ViewGroup.MarginLayoutParams> {
+                bottomMargin = systemInsets.bottom + 4.dpToPx()
+            }
+            insets
+        }
+
 
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -100,7 +116,6 @@ class PlayerActivity : AppCompatActivity() {
             }
         })
 
-        // Hent playlist-elementer
         val playlistItems = intent.getParcelableArrayListExtra<SearchResult>("playlistItems") ?: ArrayList()
         val searchResult = intent.getParcelableExtra<SearchResult>("searchResult")
 
@@ -123,7 +138,6 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         if (searchResult == null) {
-            // Håndter playliste - Generer ét playSessionId for hele playlisten
             playSessionId = getOrCreatePlaySessionId()
 
             val mediaItems = MutableList<MediaItem?>(playlistItems.size) { null }
@@ -133,6 +147,7 @@ class PlayerActivity : AppCompatActivity() {
 
             playlistItems.forEachIndexed { index, item ->
                 item.kalturaId?.let { kalturaId ->
+                    val mediaUrl = getMediaUri(kalturaId)
                     ApiService.getMediaUrlviaAPI(kalturaId, forCast = false, playSessionId = playSessionId) { mediaUrl ->
                         if (!isDestroyed && !isFinishing) {
                             runOnUiThread {
@@ -166,7 +181,6 @@ class PlayerActivity : AppCompatActivity() {
                 }
             }
         } else {
-            // Fortsæt med eksisterende afspilningslogik til håndtering af searchResult
             Log.d("PlayerActivity", "Playing single search result: ${searchResult.title}")
             setSearchResult(searchResult)
         }
@@ -215,14 +229,13 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    // Generér URL via ApiService
     private fun startPlaybackIfPossible() {
         if (!parsedEntryId.isNullOrEmpty() && !parsedFlavorId.isNullOrEmpty() && !parsedFileExt.isNullOrEmpty()) {
-            val mediaUrl = ApiService.generateLocalStreamUrl(parsedEntryId!!, parsedFlavorId!!, parsedFileExt!!, getOrCreatePlaySessionId())
+            val kalturaId = parsedEntryId!!  
+            val mediaUrl = getMediaUri(kalturaId) ?: return  
             generatedMediaUrl = mediaUrl
             PlaybackState.currentEntryId = parsedEntryId
 
-            // Tjek om mediet allerede er indlæst
             val currentMediaUri = player.currentMediaItem?.localConfiguration?.uri?.toString()
             if (currentMediaUri == mediaUrl) {
                 Log.d("PlayerActivity", "Mediet er allerede indlæst, springer afspilning over")
@@ -240,7 +253,6 @@ class PlayerActivity : AppCompatActivity() {
         PlayerManager.startPlayback(this, mediaUrl)
     }
 
-    // Bruger nu ApiService.parseUrlComponents
     private fun handleApiResponse(responseData: String?) {
         runOnUiThread {
             val components = ApiService.parseUrlComponents(responseData)
@@ -249,14 +261,12 @@ class PlayerActivity : AppCompatActivity() {
                 parsedEntryId = entryId
                 parsedFlavorId = flavorId
                 parsedFileExt = fileExt
-                // Title/description parses ikke her; bruger stadig PlaybackState.currentSearchResult
             }
             updateUIFromMetadata()
             startPlaybackIfPossible()
         }
     }
 
-    // Bruger nu ApiService.parseUrlComponents
     private fun refreshMeta(responseData: String?) {
         runOnUiThread {
             val components = ApiService.parseUrlComponents(responseData)
@@ -265,7 +275,6 @@ class PlayerActivity : AppCompatActivity() {
                 parsedEntryId = entryId
                 parsedFlavorId = flavorId
                 parsedFileExt = fileExt
-                // Title/description parses ikke her; bruger stadig PlaybackState.currentSearchResult
             }
             updateUIFromMetadata()
         }
@@ -325,7 +334,6 @@ class PlayerActivity : AppCompatActivity() {
                     return
                 }
 
-                // Brug ApiService til cast URL (ingen playSessionId nødvendig)
                 ApiService.getMediaUrlviaAPI(item.kalturaId!!, forCast = true) { uri ->
                     if (uri != null) {
                         val chromecastUrl = uri.toString()
@@ -353,7 +361,6 @@ class PlayerActivity : AppCompatActivity() {
             processNext(0)
         } else if (parsedEntryId != null && parsedFlavorId != null && parsedFileExt != null) {
             val item = PlaybackState.currentSearchResult
-            // Brug ApiService til at generere cast URL
             val chromecastUrl = ApiService.generateCastUrl(parsedEntryId!!, parsedFlavorId!!, parsedFileExt!!)
             Log.d("PlayerActivity", "Chromecast URL for single item: $chromecastUrl")
 
@@ -481,5 +488,26 @@ class PlayerActivity : AppCompatActivity() {
         super.onDestroy()
         wakeLockManager.release()
         Log.d("", "onDestroy kaldt i PlayerActivity")
+    }
+
+    private fun Int.dpToPx(): Int {
+        val density = resources.displayMetrics.density
+        return (this * density).toInt()
+    }
+
+    private fun ConstraintLayout.LayoutParams.clearBottomConstraint() {
+        bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+        bottomToTop = ConstraintLayout.LayoutParams.UNSET
+    }
+
+    private fun getMediaUri(kalturaId: String, forCast: Boolean = false): String? {
+        if (!forCast) {
+            val localUri = DownloadManager.getLocalUri(this, kalturaId)
+            if (localUri != null) {
+                return localUri.toString()  
+            }
+        }
+
+        return ApiService.generateLocalStreamUrl(parsedEntryId!!, parsedFlavorId!!, parsedFileExt!!, getOrCreatePlaySessionId())
     }
 }
