@@ -14,24 +14,23 @@ import android.support.v4.media.session.PlaybackStateCompat
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.google.android.exoplayer2.ExoPlayer
-import com.google.android.exoplayer2.MediaItem
-import com.google.android.exoplayer2.Player
-import com.google.android.exoplayer2.ext.mediasession.MediaSessionConnector
-import com.google.android.exoplayer2.ui.PlayerNotificationManager
-import java.text.SimpleDateFormat
-import java.util.Locale
 import androidx.core.content.edit
 import com.bumptech.glide.Glide
 import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
-import com.google.android.exoplayer2.C.WAKE_MODE_LOCAL
+import com.google.android.exoplayer2.ExoPlayer
+import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.Player
+import com.google.android.exoplayer2.ext.mediasession.MediaSessionConnector
 import com.google.android.exoplayer2.ext.mediasession.TimelineQueueNavigator
+import com.google.android.exoplayer2.ui.PlayerNotificationManager
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 object PlayerManager {
 
     private var player: ExoPlayer? = null
-    private var currentMediaUrl: String? = null
+    var currentMediaUrl: String? = null
     private var mediaSession: MediaSessionCompat? = null
     private var mediaSessionConnector: MediaSessionConnector? = null
     private var notificationManager: PlayerNotificationManager? = null
@@ -40,34 +39,22 @@ object PlayerManager {
     private const val CHANNEL_ID = "media_playback_channel"
     internal const val NOTIFICATION_ID = 1
 
-    // Singleton - initialiserer ExoPlayer hvis ikke allerede initialiseret
     fun getPlayer(context: Context): ExoPlayer {
         if (player == null) {
             val appContext = context.applicationContext
-            player = ExoPlayer.Builder(appContext)
-                .setWakeMode(WAKE_MODE_LOCAL)
-                .build()
+            player = ExoPlayer.Builder(appContext).build()
             initMediaSession(appContext, player!!)
 
-            // Tilføj lytter som trigger notifikation først ved reel afspilning
             player!!.addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    Log.d("PlayerManager", "onIsPlayingChanged: $isPlaying")
                     if (isPlaying && notificationManager == null) {
                         initNotification(appContext)
                     }
                 }
 
                 override fun onPlaybackStateChanged(playbackState: Int) {
-                    when (playbackState) {
-                        Player.STATE_IDLE -> Log.d("PlayerManager", "Afspiller er IDLE")
-                        Player.STATE_BUFFERING -> Log.d("PlayerManager", "Buffering...")
-                        Player.STATE_READY -> Log.d("PlayerManager", "Klar til afspilning")
-                        Player.STATE_ENDED -> {
-                            Log.d("PlayerManager", "Afspilning færdig")
-                            addPlayedId(appContext, PlaybackState.currentEntryId.toString())
-                            Log.d("", PlaybackState.currentSearchResult?.kalturaId + " føjet til playedIds")
-                        }
+                    if (playbackState == Player.STATE_ENDED) {
+                        PlayerManager.addPlayedId(appContext, PlaybackState.currentEntryId.toString())
                     }
                 }
             })
@@ -82,22 +69,18 @@ object PlayerManager {
         PlaybackState.currentSearchResult = s
     }
 
-
     fun addPlayedId(context: Context, id: String) {
         val prefs = context.getSharedPreferences("player_prefs", Context.MODE_PRIVATE)
         val playedIds = prefs.getStringSet("played_ids", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
         playedIds.add(id)
-        prefs.edit { putStringSet("played_ids", playedIds).apply() }
+        prefs.edit { putStringSet("played_ids", playedIds) }
     }
 
-
     private fun initMediaSession(context: Context, player: ExoPlayer) {
-        // Opret MediaSession
         mediaSession = MediaSessionCompat(context, "PlayerManager").apply {
             isActive = true
         }
 
-        // Forbind MediaSession til ExoPlayer via MediaSessionConnector
         mediaSessionConnector = MediaSessionConnector(mediaSession!!).apply {
             setPlayer(player)
 
@@ -111,7 +94,6 @@ object PlayerManager {
                 }
             })
         }
-
     }
 
     private fun initNotification(context: Context) {
@@ -164,41 +146,22 @@ object PlayerManager {
 
         notificationManager = PlayerNotificationManager.Builder(context, NOTIFICATION_ID, CHANNEL_ID)
             .setMediaDescriptionAdapter(mediaDescriptionAdapter)
-            .setNotificationListener(object : PlayerNotificationManager.NotificationListener {})
             .build().apply {
                 setMediaSessionToken(mediaSession!!.sessionToken)
-
-                // Aktiver ekstra knapper
-                setUseNextAction(true)
+                setUsePlayPauseActions(true)
+                setUseStopAction(true)
                 setUsePreviousAction(true)
+                setUseNextAction(true)
                 setUseRewindAction(true)
                 setUseFastForwardAction(true)
-
-                // Brug evt. disse knapper i compact view
-                //setCompactActionIndices(1, 2, 3) // Fx: rewind, play/pause, fastforward
+                setUseNextActionInCompactView(true)
             }
 
-        notificationManager?.apply {
-            setUsePlayPauseActions(true)         // (standard: true)
-            setUseStopAction(true)               // stop
-            setUsePreviousAction(true)           // <<
-            setUseNextAction(true)               // >>
-            setUseRewindAction(true)             // <<|
-            setUseFastForwardAction(true)        // |>>
-            setUseNextActionInCompactView(true)
-
-        }
-
-
-        notificationManager?.setUsePlayPauseActions(true)
-        notificationManager?.setUseStopAction(true)
         notificationManager?.setPlayer(player)
 
         val serviceIntent = Intent(context, PlayerNotificationService::class.java)
         ContextCompat.startForegroundService(context, serviceIntent)
     }
-
-
 
     private fun formatDate(dateString: String): String {
         return try {
@@ -230,8 +193,6 @@ object PlayerManager {
             )
             setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             setSmallIcon(R.drawable.kglburger)
-
-
             setStyle(
                 androidx.media.app.NotificationCompat.MediaStyle()
                     .setMediaSession(mediaSession?.sessionToken)
@@ -239,7 +200,6 @@ object PlayerManager {
             )
         }.build()
     }
-
 
     private fun createNotificationChannel(context: Context) {
         val channel = NotificationChannel(
@@ -249,44 +209,22 @@ object PlayerManager {
         )
         val manager = ContextCompat.getSystemService(context, NotificationManager::class.java)
         manager?.createNotificationChannel(channel)
-        Log.d("", "manager: $manager")
     }
 
-
-    // Starter afspilning af det angivne media-url
-    fun startPlayback(context: Context, mediaUrl: String) {
-        if (mediaUrl != currentMediaUrl) {
-            //stop() // Stopper eventuel tidligere afspilning
-            val mediaItem = MediaItem.fromUri(mediaUrl) // Opretter MediaItem
-            val player = getPlayer(context) // Henter ExoPlayer
-            player.setMediaItem(mediaItem) // Sætter MediaItem
-            player.prepare() // Forbereder spilleren
-            player.playWhenReady = false // Starter afspilning
-            currentMediaUrl = mediaUrl // Opdaterer den nuværende URL
-
+    fun startPlayback(context: Context, mediaUri: String) {
+        if (mediaUri != currentMediaUrl) {
+            val mediaItem = MediaItem.fromUri(mediaUri)
+            val player = getPlayer(context)
+            player.setMediaItem(mediaItem)
+            player.prepare()
+            player.playWhenReady = false
+            currentMediaUrl = mediaUri
             try {
-                PlayerManager.initNotification(context)
-                Log.d("", "PlayerManager.initNotification(context) burde være kørt")
+                initNotification(context)
             } catch (e: Exception) {}
         }
     }
 
-    // Stopper afspilning
-    fun stop() {
-        player?.run {
-            clearMediaItems()
-        }
-
-        currentMediaUrl = null
-        PlaybackState.currentSearchResult = null
-
-        // AFBIND notifikationen, men behold MediaSession aktiv
-        notificationManager?.setPlayer(null)
-        notificationManager = null
-    }
-
-
-    // Frigiver ressourcerne
     fun release() {
         player?.release()
         player = null
