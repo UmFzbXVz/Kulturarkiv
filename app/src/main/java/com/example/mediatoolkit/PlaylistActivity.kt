@@ -1,9 +1,7 @@
 package com.example.mediatoolkit
 
 import android.content.DialogInterface
-import android.content.SharedPreferences
 import android.os.Bundle
-import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -24,24 +22,14 @@ class PlaylistActivity : AppCompatActivity() {
 
     internal var playlist: Playlist? = null
     private lateinit var editTextName: EditText
-    private lateinit var sharedPreferences: SharedPreferences
     private lateinit var mediaAdapter: SearchResultAdapter
     private lateinit var recyclerViewMedier: RecyclerView
     private var mediaList: MutableList<SearchResult> = mutableListOf()
     private var currentlyPlayingId: String? = null
 
-
-
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_playlist)
-
-        // Initialisér SharedPreferences
-        sharedPreferences = getSharedPreferences("player_prefs", MODE_PRIVATE)
-
-        // Indlæs playlister
-        PlaylistManager.loadPlaylistsFromPrefs(this)
 
         val playlistId = intent.getStringExtra("playlistId")
         playlist = PlaylistManager.getPlaylistById(playlistId ?: "")
@@ -53,16 +41,7 @@ class PlaylistActivity : AppCompatActivity() {
         playlist?.let { pl ->
             editTextName.setText(pl.name)
 
-            // Hent afspillede ID'er fra SharedPreferences
-            val playedIds = sharedPreferences.getStringSet("played_ids", emptySet()) ?: emptySet()
-            val filteredMediaList = if (PlaybackState.showPlayed) {
-                pl.mediaList.toMutableList() // Show all media
-            } else {
-                pl.mediaList.filterNot { media ->
-                    playedIds.contains(media.kalturaId)
-                }.toMutableList() // Filter out played media
-            }
-
+            val playedIds = getSharedPreferences("player_prefs", MODE_PRIVATE).getStringSet("played_ids", emptySet()) ?: emptySet()
             mediaList = if (PlaybackState.showPlayed) {
                 pl.mediaList.toMutableList()
             } else {
@@ -71,38 +50,24 @@ class PlaylistActivity : AppCompatActivity() {
                 }.toMutableList()
             }
 
-            mediaAdapter = SearchResultAdapter(mediaList) { }
+            mediaAdapter = SearchResultAdapter(mediaList)
             recyclerViewMedier.layoutManager = LinearLayoutManager(this)
             recyclerViewMedier.adapter = mediaAdapter
 
-            // Sætter playlisten i PlaybackState
-            // Dette afgør om vi sender FULD playliste eller FILTRERET playliste
-            PlaybackState.currentPlaylist = mediaList
-
-
-            // FAB til playlisteafpilning
             val fabPlayAll = findViewById<FloatingActionButton>(R.id.fab_play_all)
             fabPlayAll.setOnClickListener {
-                playlist?.mediaList?.forEach { media ->
-                    Log.d("PlaylistActivity", "Media (log(mediaList)): ${media.title}, ID: ${media.id}")
-                }
-
                 val intent = Intent(this, PlayerActivity::class.java)
-                intent.putParcelableArrayListExtra("playlistItems", ArrayList(playlist?.mediaList ?: emptyList()))
+                intent.putParcelableArrayListExtra("playlistItems", ArrayList(pl.mediaList))
                 startActivity(intent)
             }
-
             fabPlayAll.isEnabled = mediaList.isNotEmpty()
 
-
-            // Focus change listener
             editTextName.setOnFocusChangeListener { _, hasFocus ->
                 if (!hasFocus) {
                     saveAndHideKeyboard()
                 }
             }
 
-            // Keyboard action listener
             editTextName.setOnEditorActionListener { _, actionId, event ->
                 if (actionId == EditorInfo.IME_ACTION_DONE ||
                     (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
@@ -135,11 +100,10 @@ class PlaylistActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
 
-        val previousPlayedIds = PlaybackState.currentPlayedIds // Gem før load
+        val previousPlayedIds = PlaybackState.currentPlayedIds
         loadPlaybackState()
         val newPlayedIds = PlaybackState.currentPlayedIds
 
-        // Sammenlign for ændringer
         val changedItems = mediaList.mapIndexedNotNull { index, item ->
             val wasPlayed = previousPlayedIds.contains(item.kalturaId)
             val isPlayed = newPlayedIds.contains(item.kalturaId)
@@ -155,7 +119,6 @@ class PlaylistActivity : AppCompatActivity() {
         changedItems.forEach { mediaAdapter.notifyItemChanged(it) }
     }
 
-
     private fun saveAndHideKeyboard() {
         val name = editTextName.text.toString().trim()
         if (name.isNotEmpty()) {
@@ -168,16 +131,11 @@ class PlaylistActivity : AppCompatActivity() {
         imm.hideSoftInputFromWindow(editTextName.windowToken, 0)
     }
 
-
     private fun loadPlaybackState() {
-        // Hent playedIds som Set fra SharedPreferences
         val prefs = getSharedPreferences("player_prefs", MODE_PRIVATE)
         val playedIdsSet = prefs.getStringSet("played_ids", emptySet()) ?: emptySet()
 
         PlaybackState.currentPlayedIds = playedIdsSet
-
-
-        Log.d("", "playedIds: $playedIdsSet")
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
@@ -192,5 +150,4 @@ class PlaylistActivity : AppCompatActivity() {
         }
         return super.dispatchTouchEvent(ev)
     }
-
 }
