@@ -20,14 +20,13 @@ object ApiService {
     private val client = OkHttpClient()
     private var authCookie: String? = null
     private var hasRetriedAfter401 = false
-    private val mediaCache = mutableMapOf<String, Uri?>() 
+    private val mediaCache = mutableMapOf<String, Uri?>()
     private lateinit var prefs: android.content.SharedPreferences
 
     fun init(context: android.content.Context) {
         prefs = context.getSharedPreferences("api_service_prefs", android.content.Context.MODE_PRIVATE)
         authCookie = prefs.getString("auth_cookie", null)
 
-        // Indlæs mediaCache fra prefs
         val cacheJson = prefs.getString("media_cache", null)
         cacheJson?.let {
             try {
@@ -42,7 +41,6 @@ object ApiService {
         }
     }
 
-    // Ny: Parser kun de nødvendige komponenter til URL-generering (entryId, flavorId, fileExt)
     fun parseUrlComponents(responseData: String?): Triple<String?, String?, String?>? {
         return try {
             responseData?.let {
@@ -69,7 +67,6 @@ object ApiService {
         }
     }
 
-    // Flyttet fra PlayerActivity: Generer URL til lokal afspilning (ExoPlayer)
     fun generateLocalStreamUrl(entryId: String, flavorId: String, fileExt: String, playSessionId: String): String {
         Log.d("ApiService", "Genererer local stream URL baseret på $entryId og $flavorId med playSessionId: $playSessionId")
 
@@ -82,7 +79,6 @@ object ApiService {
         }
     }
 
-    // Flyttet fra PlayerActivity og gjort public
     fun generateCastUrl(entryId: String, flavorId: String, fileExt: String): String {
         return when (fileExt.lowercase()) {
             "mp3" -> "https://api.kltr.nordu.net/p/397/sp/39700/serveFlavor/entryId/$entryId/flavorId/$flavorId/name/a.mp3"
@@ -90,11 +86,9 @@ object ApiService {
         }
     }
 
-    // Opdateret: Understøtter nu forCast og playSessionId
     fun getMediaUrlviaAPI(entryId: String, forCast: Boolean = false, playSessionId: String? = null, onResult: (Uri?) -> Unit) {
         val cacheKey = "$entryId${if (forCast) "_cast" else "_local"}"
 
-        // Tjek cache
         mediaCache[cacheKey]?.let { cachedUrl ->
             Log.d("KalturaData", "Henter fra cache for $cacheKey: $cachedUrl")
             runOnMainThread { onResult(cachedUrl) }
@@ -171,7 +165,6 @@ object ApiService {
 
                     try {
                         val jsonResponse = JSONObject(responseData)
-                        //Log.d("Kaltura response", jsonResponse.toString())
                         callback(responseData)
                     } catch (e: Exception) {
                         Log.e("Parse error", "Ugyldig JSON: $responseData")
@@ -235,7 +228,6 @@ object ApiService {
         }.start()
     }
 
-    // Opdateret til at returnere cookie og køre callback når klar
     fun authenticateAndLogCookies(onComplete: () -> Unit) {
         val currentUnixTime = System.currentTimeMillis() / 1000
 
