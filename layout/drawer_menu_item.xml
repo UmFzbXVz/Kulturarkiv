@@ -1,0 +1,14 @@
+<!-- res/layout/drawer_menu_item.xml -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingBottom="12dp"
+    android:paddingStart="12dp"
+    android:orientation="vertical" ><TextView
+    android:id="@+id/menuItemText"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:textSize="20sp"
+    android:fontFamily="@font/noway"
+    android:textColor="@android:color/black" /></LinearLayout>
+

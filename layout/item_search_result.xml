@@ -1,0 +1,113 @@
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="130dp"
+    android:layout_margin="12dp"
+    app:cardCornerRadius="1dp"
+    app:cardElevation="9dp"><RelativeLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:id="@+id/thumbnailImageView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitEnd"
+        android:alpha="1.0"
+        android:layout_gravity="end"/>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:paddingEnd="12dp"
+        android:paddingStart="12dp"
+        android:paddingTop="5dp"
+        android:background="@android:color/transparent">
+
+        <TextView
+            android:id="@+id/titleTextView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="18sp"
+            android:fontFamily="@font/noway"
+            android:textStyle="bold"
+            android:textColor="#222222"
+            android:maxLines="2"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/descriptionTextView"
+            android:layout_width="match_parent"
+            android:fontFamily="@font/noway"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:textColor="#666666"
+            android:ellipsize="end"
+            android:layout_marginEnd="20dp"
+            android:layout_marginTop="5dp"
+            android:minHeight="48dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:foregroundGravity="top"
+            android:layout_height="0.7dp"
+            android:background="#002E70"
+            android:layout_marginTop="5dp"
+            android:layout_marginBottom="3dp"
+            android:layout_gravity="bottom"
+            android:alpha="1" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_gravity="bottom">
+
+            <TextView
+                android:id="@+id/dateTextView"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="#343434"
+                android:layout_weight="1"
+                android:textStyle="bold"
+                android:gravity="bottom"
+                android:fontFamily="@font/noway"
+                android:layout_marginBottom="3dp" />
+
+            <ImageView
+                android:id="@+id/playIcon"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:src="@drawable/play_hollow"
+                android:visibility="gone"
+                android:scaleX="0.8"
+                android:scaleY="0.8"
+                android:contentDescription="Afspiller nu"
+                android:layout_marginBottom="2dp"/>
+
+            <ImageView
+                android:id="@+id/originIcon"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="Origin-ikonet: TV eller Radio"
+                android:layout_marginEnd="6dp"
+                android:scaleX="0.8"
+                android:scaleY="0.8"
+                android:layout_marginBottom="2dp"
+                />
+
+            <TextView
+                android:id="@+id/durationTextView"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:fontFamily="@font/noway"
+                android:textColor="#343434"
+                android:textStyle="bold"
+                android:layout_marginBottom="3dp" />
+        </LinearLayout>
+    </LinearLayout>
+</RelativeLayout></androidx.cardview.widget.CardView>
